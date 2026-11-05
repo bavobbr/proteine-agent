@@ -7,31 +7,15 @@ Een 100% lokale, autonome AI-agent die wekelijks Belgische supermarkten (**Alber
 ## 🏗️ Architectuur & Dataflow
 
 ```mermaid
-flowchart TD
-    Cron["Cronjob (Woensdag 09:00) of Handmatige Run"] --> RunScript["run_agent.sh"]
-    
-    subgraph Scraping ["1. WAF-vrije Browser & Semantische Extractie"]
-        RunScript --> Xvfb["Google Chrome via Xvfb (CDP Poort 9222)"]
-        Xvfb --> Scraper["extract_supermarkten.py (Playwright)"]
-        Scraper --> AH["Albert Heijn (ah.be)"]
-        Scraper --> Colruyt["Colruyt (collectandgo.be)"]
-        Scraper --> Delhaize["Delhaize (delhaize.be)"]
-        AH & Colruyt & Delhaize --> DataJSON["data.json (Semantische DOM-context)"]
-    end
+flowchart LR
+    Cron["⏰ Cron / Run"] --> Scraper["🌐 Playwright + Xvfb"]
 
-    subgraph Memory ["2. Slim Anti-Spam Deal-Geheugen"]
-        DataJSON --> Analyser["analyseer_promos.py"]
-        SeenJSON["seen_promos.json (Actieve Deal Hashes)"] <--> Analyser
-        Analyser --> CheckNew{"Nieuwe of verder afgeprijsde deals?"}
-        CheckNew -- "Nee (0 nieuwe deals)" --> Stop["Stop zonder LLM-call of Telegram-spam"]
-    end
+    Scraper --> AH["Albert Heijn"] & Colruyt["Colruyt"] & Delhaize["Delhaize"]
+    AH & Colruyt & Delhaize --> Data["📄 data.json"]
 
-    subgraph LLM ["3. 2-Traps Lokale LLM Analyse (Ollama)"]
-        CheckNew -- "Ja (minstens 1 nieuwe deal)" --> Step1["Stap 1 (Map): Filter PROMOTIE_ACTIEF per winkel"]
-        Step1 --> Step2["Stap 2 (Reduce): Bereken stukprijs, groepeer smaken & markeer 🆕 vs (loopt nog)"]
-        Step2 --> Telegram["Telegram Bot API Notificatie"]
-        Telegram --> UpdateSeen["Werk seen_promos.json & laatste_bericht.json bij"]
-    end
+    Data --> Geheugen{"🧠 Nieuwe deals?"}
+    Geheugen -- "Nee" --> Stop["🛑 Stop (Anti-Spam)"]
+    Geheugen -- "Ja" --> Ollama["🤖 Ollama LLM Analyse"] --> Telegram["📲 Telegram Alert"]
 ```
 
 ---
