@@ -1,0 +1,16 @@
+# Secrets & Environment
+.env
+.env.*
+!.env.example
+
+# Virtual environment & Python cache
+venv/
+__pycache__/
+*.py[cod]
+
+# Runtime state, scraped data & logs
+data.json
+seen_promos.json
+laatste_bericht.json
+agent_log.txt
+*.log
