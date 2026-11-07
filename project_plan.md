@@ -27,7 +27,7 @@ Bavo (45) and his son Mauro (17) play a lot of sports (field hockey, gym, core s
 ## ✅ Completed Milestones (Phase 1)
 1. **WAF-Free Browser & Virtual Display:** Chrome runs with a persistent user profile on port 9222 (visible or via `xvfb-run`), loading Albert Heijn, Colruyt, and Delhaize reliably.
 2. **Dynamic Multi-Store & Search Query Loop (`extract_supermarkets.py`):**
-   * *Queries:* `["hipro", "barebells", "holie", "melkunie protein", "nakd protein", "upfront", "eiwitreep", "protein bar"]`
+   * *Queries:* `["hipro", "barebells", "holie", "melkunie protein", "nakd protein", "upfront", "xxl nutrition", "eiwitreep", "protein bar"]`
    * *Stores & URLs:*
      * **Albert Heijn:** `https://www.ah.be/zoeken?query={query}`
      * **Colruyt (Collect&Go):** `https://www.collectandgo.be/nl/zoek?searchTerm={query}`

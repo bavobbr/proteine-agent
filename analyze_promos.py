@@ -315,9 +315,9 @@ Calculate the effective deal prices accurately and write the final Telegram mess
 
 1. EFFECTIVE PROMO UNIT PRICE CALCULATION:
    - The `unit_price` listed is ALWAYS the regular standard price per item before discount (note: Belgian sites may write `2 euro 09 cent` or `€ 2,09`, which means €2.09).
-   - For `1+1 gratis` (1+1 free): you get 2 items for the price of 1 (= 50% discount per item, so `unit_price * 0.50`).
+   - For `1+1 gratis` or `2e gratis` (1+1 free / 2nd free): you get 2 items for the price of 1 (= 50% discount per item, so `unit_price * 0.50`).
      * Example: €2.09 per item with 1+1 gratis ➔ `2.09 * 0.50` = *€1.05/pc* when buying 2 (regular €2.09).
-     * Example: €2.15 per item with 1+1 gratis ➔ `2.15 * 0.50` = *€1.08/pc* when buying 2 (regular €2.15).
+     * Example: €2.49 per item with 2e gratis ➔ `2.49 * 0.50` = *€1.25/pc* when buying 2 (regular €2.49).
    - For `2de tegen -50%` (2nd at -50%): you buy 2 items for 1.5x the unit price (= 25% discount per item, so `unit_price * 0.75`).
      * Example: €2.35 per item with 2nd at -50% ➔ `2.35 * 0.75` = *€1.76/pc* when buying 2 (regular €2.35).
      * Example: €2.49 per item with 2nd at -50% ➔ `2.49 * 0.75` = *€1.87/pc* when buying 2 (regular €2.49).

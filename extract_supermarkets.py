@@ -12,6 +12,7 @@ BRANDS = [
     "melkunie protein",  # Specifically high-protein drinks and puddings from Melkunie
     "nakd protein",      # Specifically high-protein variants from Nākd
     "upfront",           # Unique brand keyword for Upfront products
+    "xxl nutrition",     # Captures XXL Nutrition Fitmousse, Fitpudding, Fitshake, Fitquark, bars
     "eiwitreep",         # Dutch fallback for protein bars across other brands
     "protein bar"        # English fallback for protein bars
 ]
@@ -193,7 +194,8 @@ async def extract_page(page, store, query, seen_links):
         query_words = [w for w in query.lower().split() if len(w) >= 2]
         target_keywords = [
             query.lower(), *query_words, "hipro", "danone", "barebells", "holie", "melkunie",
-            "nakd", "nākd", "upfront", "protein", "proteïne", "eiwit", "reep", "bar"
+            "nakd", "nākd", "upfront", "xxl", "fitmousse", "fitpudding", "fitshake", "fitquark",
+            "protein", "proteïne", "eiwit", "reep", "bar"
         ]
 
         for card in cards:
