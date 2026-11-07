@@ -100,6 +100,36 @@ FUTURE_PROMO_RE = re.compile(
 )
 
 
+def is_at_least_50_percent_off(promotion_str):
+    """
+    Returns True only if the promotion gives at least 50% effective discount per item:
+      - 1+1 gratis, 2e gratis, 2de gratis, 2+2 gratis, 1+2 gratis, etc.
+      - Direct -50% (or higher, e.g. -60%, -70%), EXCLUDING '2de tegen -50%' / '2de aan -50%' (which is only 25% off).
+    """
+    p = (promotion_str or "").strip().lower()
+    if not p:
+        return False
+
+    # Exclude '2nd at -50%' / '2nd half price' (only 25% effective discount)
+    if re.search(r"\b(2de|2e|tweede)\b.*(-50%|halve\s+prijs|1/2\s+prijs)", p):
+        return False
+
+    # 1+1 free, 2nd free, 2+2 free, 1+2 free
+    if re.search(r"\b(1\+1|2\+2|1\+2|2\+3|3\+3)\s*gratis\b", p) or re.search(r"\b(2e|2de|tweede)\s+gratis\b", p):
+        return True
+
+    # Direct percentage discount >= 50%
+    for m in re.finditer(r"-\s*(\d+(?:[.,]\d+)?)\s*%|\b(\d+(?:[.,]\d+)?)\s*%\s*korting\b", p):
+        pct_str = (m.group(1) or m.group(2)).replace(",", ".")
+        try:
+            if float(pct_str) >= 50.0:
+                return True
+        except ValueError:
+            pass
+
+    return False
+
+
 def parse_semantic_context(context_lines):
     """Extracts structured fields from a product's semantic_context list."""
     info = {
@@ -131,6 +161,11 @@ def parse_semantic_context(context_lines):
 
     # Ignore future promotions that are not yet active in-store (e.g., AH 'Vanaf maandag')
     if info["is_promo"] and (FUTURE_PROMO_RE.search(info["title"]) or FUTURE_PROMO_RE.search(info["promotion"])):
+        info["is_promo"] = False
+        info["promotion"] = ""
+
+    # Ignore minor promotions (< 50% effective discount per item)
+    if info["is_promo"] and not is_at_least_50_percent_off(info["promotion"]):
         info["is_promo"] = False
         info["promotion"] = ""
 
@@ -287,10 +322,11 @@ def analyze_deals(enriched_data):
 {store_block}
 
 TASK:
-Find ONLY the lines in the {store_name} list above that start with `PROMO_ACTIVE:`.
+Find ONLY the lines in the {store_name} list above that start with `PROMO_ACTIVE:` AND offer **at least 50% effective discount per item** (such as `1+1 gratis`, `2e gratis`, `2+2 gratis`, `1+2 gratis`, or `-50%` and higher).
 - Completely ignore every line that says `NO_PROMO (standard price)`!
-- For each `PROMO_ACTIVE:` line found, copy the exact `deal_status` (`NEW_DEAL` or `ONGOING_DEAL`), `title`, promotion, and `unit_price` from that same line.
-- If {store_name} has zero lines with `PROMO_ACTIVE:`, reply ONLY with: "NO_PROMOS".
+- Completely ignore minor discounts under 50% off (such as `-10%`, `-20%`, `-25%`, `-33%`, or `2de tegen -50%` which is only 25% off)!
+- For each qualifying `PROMO_ACTIVE:` line found, copy the exact `deal_status` (`NEW_DEAL` or `ONGOING_DEAL`), `title`, promotion, and `unit_price` from that same line.
+- If {store_name} has zero qualifying lines with >= 50% discount, reply ONLY with: "NO_PROMOS".
 Return only the extracted list without any introduction."""
 
         try:
@@ -311,42 +347,37 @@ From the full product database of Albert Heijn, Colruyt, and Delhaize, the follo
 {combined_extracts}
 
 YOUR TASK:
-Calculate the effective deal prices accurately and write the final Telegram message in ENGLISH:
+Filter strictly for **major deals (at least 50% effective discount per item)**, calculate the effective deal prices accurately, and write a concise final Telegram message in ENGLISH:
 
-1. EFFECTIVE PROMO UNIT PRICE CALCULATION:
+1. STRICT >= 50% DISCOUNT FILTER & UNIT PRICE CALCULATION:
+   - ONLY include promotions that give **at least 50% effective discount per item** (`1+1 gratis`, `2e gratis`, `2+2 gratis`, `1+2 gratis`, or direct `-50%` and higher).
+   - EXCLUDE any minor discounts under 50% off (do NOT include `-10%`, `-20%`, `-25%`, or `2de tegen -50%`!).
    - The `unit_price` listed is ALWAYS the regular standard price per item before discount (note: Belgian sites may write `2 euro 09 cent` or `€ 2,09`, which means €2.09).
    - For `1+1 gratis` or `2e gratis` (1+1 free / 2nd free): you get 2 items for the price of 1 (= 50% discount per item, so `unit_price * 0.50`).
      * Example: €2.09 per item with 1+1 gratis ➔ `2.09 * 0.50` = *€1.05/pc* when buying 2 (regular €2.09).
      * Example: €2.49 per item with 2e gratis ➔ `2.49 * 0.50` = *€1.25/pc* when buying 2 (regular €2.49).
-   - For `2de tegen -50%` (2nd at -50%): you buy 2 items for 1.5x the unit price (= 25% discount per item, so `unit_price * 0.75`).
-     * Example: €2.35 per item with 2nd at -50% ➔ `2.35 * 0.75` = *€1.76/pc* when buying 2 (regular €2.35).
-     * Example: €2.49 per item with 2nd at -50% ➔ `2.49 * 0.75` = *€1.87/pc* when buying 2 (regular €2.49).
-   - For `-25% vanaf 2 st` (-25% from 2 pcs): multiply unit_price by `0.75` (e.g. €1.99 * 0.75 = *€1.49/pc* from 2 pcs).
-   - For `-10% vanaf 4 st` (-10% from 4 pcs): multiply unit_price by `0.90` (e.g. €3.90 * 0.90 = *€3.51/pc* from 4 pcs).
-   - Translate Dutch promo labels into clean English (e.g., `1+1 free`, `2nd at -50%`, `-25% from 2 pcs`, `-10% from 4 pcs`).
+   - Translate Dutch promo labels into clean English (`1+1 free`, `2nd free`, `-50%`).
 
 2. GROUP FLAVORS AND VARIANTS OF THE SAME BRAND ON A SINGLE LINE (CRITICAL):
-   - When a brand at the same store has **multiple** flavors, sizes, or variants on promo (e.g., 2 flavors of *Joyfuel Bars*, 2 variants of *Philadelphia Protein*, or 2 flavors of *Arla Protein Pudding*), ALWAYS merge them into **one single bullet point per brand/product group** with `(various flavors)` or the specific variants!
-   - When a brand at a store has only **1 flavor/variant** on promo, put that specific flavor in parentheses (and NOT `various flavors`), e.g. `(Vanilla 330ml)` or `(Strawberry)`.
+   - When a brand at the same store has **multiple** flavors, sizes, or variants on promo (e.g., multiple flavors of *XXL Nutrition Fitpudding* or *Arla Protein Pudding*), ALWAYS merge them into **one single bullet point per brand/product group** with `(various flavors)` or the specific variants!
+   - When a brand at a store has only **1 flavor/variant** on promo, put that specific flavor in parentheses (and NOT `various flavors`), e.g. `(Chocolate 200g)` or `(Strawberry & Raspberry)`.
    - Use a price range if prices vary slightly across variants.
    - Desired grouping examples:
-     * `• 🆕 *NXT Level Protein Bars* (various flavors) – 2nd at -50% ➔ *€1.76 - €1.87/pc* (regular €2.35 - €2.49)`
-     * `• 🆕 *Joyfuel Protein Bars* (various flavors) – -25% from 2 pcs ➔ *€2.32/pc* (regular €3.09)`
-     * `• 🆕 *Philadelphia Protein* (Cottage cheese & Spread) – -25% from 2 pcs ➔ *€1.49 - €2.84/pc* (regular €1.99 - €3.79)`
-     * `• 🆕 *HiPRO Drink Yogurt* (Vanilla 330ml) – -10% from 4 pcs ➔ *€3.51/pc* (regular €3.90)`
-     * `• *Barebells Protein Bar* (various flavors) – 2nd at -50% ➔ *€1.87/pc* (regular €2.49) (still running)`
+     * `• 🆕 *Arla Protein Pudding* (various flavors) – 1+1 free ➔ *€1.05/pc* (regular €2.09)`
+     * `• 🆕 *XXL Nutrition Fitmousse* (Chocolate) – 2nd free ➔ *€1.25/pc* (regular €2.49)`
+     * `• *Holie's Chewy Bar* (various flavors) – 1+1 free ➔ *€1.75 - €1.90/pc* (regular €3.49 - €3.79) (still running)`
 
 3. MARKING NEW VS. ONGOING DEALS (STRICTLY EITHER/OR, NEVER BOTH):
-   - Include ALL promotions found in Step 1 (do not omit any brand!).
+   - Include ALL qualifying (>= 50% off) promotions found in Step 1.
    - Each promotion from Step 1 has `deal_status: NEW_DEAL` or `deal_status: ONGOING_DEAL`.
    - Case A (`NEW_DEAL`): If a product group (or at least one variant within it) has `NEW_DEAL`, place `🆕 ` right after the bullet `• ` and **NEVER** put `(still running)` at the end of that line!
    - Case B (`ONGOING_DEAL`): If a product group consists exclusively of `ONGOING_DEAL`, do **NOT** put `🆕` in front, and append `(still running)` at the very end of the line.
    - A line must NEVER contain both `🆕` and `(still running)`!
 
 4. STRUCTURE & TELEGRAM FORMATTING (STRICT):
-   - Start with the header: `🥊 *Protein Promo Alert Dendermonde* 🥊`
+   - Start with the header: `🥊 *Protein Promo Alert Dendermonde (50%+ Off)* 🥊`
    - Use store headings: `🛒 *Delhaize*`, `🛒 *Colruyt*`, `🛒 *Albert Heijn*`.
-   - If a store has `NO_PROMOS`, write underneath: `• No promos this week (everything at standard price).`
+   - If a store has `NO_PROMOS` (no deals with >= 50% discount), write underneath: `• No 50%+ promos this week.`
    - For bold text use ONLY single asterisks: `*bold*` (NEVER double `**` and NEVER `#` headers!).
    - Use `•` for bullet points.
    - Conclude with a brief `💡 *Advice:*` of 1-2 sentences in English highlighting the best deals.

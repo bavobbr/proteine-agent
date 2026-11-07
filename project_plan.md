@@ -38,8 +38,9 @@ Bavo (45) and his son Mauro (17) play a lot of sports (field hockey, gym, core s
      * First field is always `PROMO_ACTIVE: <deal>` or `NO_PROMO (standard price)` (critical to prevent attention drift in causal LLMs).
      * Followed by `title: ...`, `unit_price: ...`, and `unit: ...`.
 4. **2-Stage LLM Map-Reduce & Variant Grouping (`analyze_promos.py`):**
-   * **Step 1 (Per-store extraction):** Ollama filters all items with `PROMO_ACTIVE` (including their `deal_status`) per supermarket from `data.json`.
-   * **Step 2 (Calculation, Grouping & Formatting):** Ollama calculates the effective unit price (e.g., `1+1 gratis` = `0.50 * unit_price`, `2de tegen -50%` = `0.75 * unit_price`), merges multiple flavors/variants of the same brand onto a single line with a price range, marks new deals with `🆕` and ongoing deals with `(still running)`, and formats the message in clean Telegram Markdown (single `*` for bold, no `#` headers).
+   * **Strict >= 50% Discount Filter:** Only tracks and reports major promotions offering at least 50% effective discount per item (`1+1 gratis`, `2e gratis`, `2+2 gratis`, `-50%` or higher), filtering out minor `-10%`, `-25%`, and `2de tegen -50%` (25% off) promos.
+   * **Step 1 (Per-store extraction):** Ollama filters all qualifying items with `PROMO_ACTIVE` (including their `deal_status`) per supermarket from `data.json`.
+   * **Step 2 (Calculation, Grouping & Formatting):** Ollama calculates the effective unit price (`0.50 * unit_price`), merges multiple flavors/variants of the same brand onto a single line with a price range, marks new deals with `🆕` and ongoing deals with `(still running)`, and formats the message in clean Telegram Markdown (single `*` for bold, no `#` headers).
 5. **Smart Deal-Level Anti-Spam (`seen_promos.json`):**
    * Local memory per individual active deal (SHA-256 hash of `supermarket | title | promotion | unit_price`).
    * **No new deals = No spam (and no wasted LLM calls):** As long as all active promotions continue unchanged, no duplicate Telegram alert is sent.

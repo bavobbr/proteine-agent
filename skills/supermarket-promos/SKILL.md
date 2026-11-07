@@ -38,11 +38,9 @@ Run the command below via your shell/terminal tool. This script automatically la
 ```
 
 ### 2. Guidelines for replying to the user
-1. **Calculate effective unit prices for promotions:**
-   - `1+1 gratis` (1+1 free) = `0.50 * unit_price` (50% discount when buying 2)
-   - `2de tegen -50%` (2nd at -50%) = `0.75 * unit_price` (25% discount when buying 2)
-   - `-25% vanaf 2 st` (-25% from 2 pcs) = `0.75 * unit_price`
-   - `-10% vanaf 4 st` (-10% from 4 pcs) = `0.90 * unit_price`
+1. **Focus on major deals (>= 50% effective discount per item):**
+   - Prioritize `1+1 gratis` (1+1 free = `0.50 * unit_price`), `2e gratis` (2nd free = `0.50 * unit_price`), `2+2 gratis`, and `-50%` or higher discounts.
+   - Ignore minor discounts (`-10%`, `-25%`, or `2de tegen -50%` which is only 25% off) unless the user specifically asks for all prices/discounts.
 2. **Group flavors/variants** of the same brand on a single line where applicable.
 
 ### 3. Run the full weekly protein promo pipeline
