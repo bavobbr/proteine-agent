@@ -11,6 +11,7 @@ __pycache__/
 # Runtime state, scraped data & logs
 data.json
 seen_promos.json
+last_message.json
 laatste_bericht.json
 agent_log.txt
 *.log

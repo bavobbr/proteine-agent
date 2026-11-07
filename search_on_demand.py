@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-On-Demand Supermarkt Zoeker (CLI wrapper voor Personal Agent / Hermes Skill).
-Hergebruikt SUPERMARKTEN en extract_page uit extract_supermarkten.py en
-parse_semantic_context uit analyseer_promos.py zonder code-duplicatie en
-zonder data.json of seen_promos.json van de wekelijkse cronjob aan te raken.
+On-Demand Supermarket Search CLI (wrapper for Personal Agent / Hermes Skill).
+Reuses SUPERMARKETS and extract_page from extract_supermarkets.py and
+parse_semantic_context from analyze_promos.py with zero code duplication and
+without touching data.json or seen_promos.json used by the weekly cron job.
 """
 import argparse
 import asyncio
@@ -15,8 +15,8 @@ import time
 import urllib.request
 from playwright.async_api import async_playwright
 
-from extract_supermarkten import SUPERMARKTEN, extract_page
-from analyseer_promos import parse_semantic_context
+from extract_supermarkets import SUPERMARKETS, extract_page
+from analyze_promos import parse_semantic_context
 
 STORE_ALIASES = {
     "ah": "Albert Heijn",
@@ -38,7 +38,7 @@ def is_cdp_ready(port=9222):
 
 
 def ensure_browser_running():
-    """Start Xvfb + Chrome op poort 9222 als die nog niet actief is. Geeft subprocess terug indien zelf gestart."""
+    """Starts Xvfb + Chrome on port 9222 if not already running. Returns subprocess if started by us."""
     if is_cdp_ready(9222):
         return None
 
@@ -64,7 +64,7 @@ def ensure_browser_running():
 
 def resolve_stores(stores_arg):
     if not stores_arg or stores_arg.strip().lower() in ("all", "alle", "*"):
-        return SUPERMARKTEN
+        return SUPERMARKETS
 
     requested = set()
     for part in stores_arg.split(","):
@@ -72,12 +72,12 @@ def resolve_stores(stores_arg):
         if key in STORE_ALIASES:
             requested.add(STORE_ALIASES[key])
         else:
-            for s in SUPERMARKTEN:
-                if key in s["naam"].lower():
-                    requested.add(s["naam"])
+            for s in SUPERMARKETS:
+                if key in s["name"].lower():
+                    requested.add(s["name"])
 
-    selected = [s for s in SUPERMARKTEN if s["naam"] in requested]
-    return selected if selected else SUPERMARKTEN
+    selected = [s for s in SUPERMARKETS if s["name"] in requested]
+    return selected if selected else SUPERMARKETS
 
 
 async def run_search(queries, stores, only_promos=False):
@@ -93,17 +93,17 @@ async def run_search(queries, stores, only_promos=False):
             for query in queries:
                 items = await extract_page(page, store, query, seen_links)
                 for item in items:
-                    parsed = parse_semantic_context(item.get("semantische_context", []))
+                    parsed = parse_semantic_context(item.get("semantic_context", []))
                     if only_promos and not parsed["is_promo"]:
                         continue
                     all_items.append({
-                        "supermarkt": item["supermarkt"],
-                        "zoekterm": item["zoekterm"],
+                        "supermarket": item["supermarket"],
+                        "search_query": item["search_query"],
                         "is_promo": parsed["is_promo"],
-                        "promotie": parsed["promotie"],
-                        "titel": parsed["titel"],
-                        "stukprijs": parsed["stukprijs"],
-                        "eenheid": parsed["eenheid"],
+                        "promotion": parsed["promotion"],
+                        "title": parsed["title"],
+                        "unit_price": parsed["unit_price"],
+                        "unit": parsed["unit"],
                         "link": item["link"],
                     })
                 await asyncio.sleep(0.5)
@@ -112,44 +112,44 @@ async def run_search(queries, stores, only_promos=False):
 
 
 def format_markdown_report(items, queries, stores, only_promos):
-    store_names = ", ".join(s["naam"] for s in stores)
+    store_names = ", ".join(s["name"] for s in stores)
     query_str = ", ".join(queries)
     promos = [i for i in items if i["is_promo"]]
 
     lines = [
-        f"### Zoekresultaat Supermarkten ({store_names})",
-        f"- **Zoektermen:** {query_str}",
-        f"- **Gevonden:** {len(items)} producten ({len(promos)} met actieve promotie)",
+        f"### Supermarket Search Results ({store_names})",
+        f"- **Queries:** {query_str}",
+        f"- **Found:** {len(items)} products ({len(promos)} with active promotion)",
         ""
     ]
 
     for store in stores:
-        s_name = store["naam"]
-        s_items = [i for i in items if i["supermarkt"] == s_name]
+        s_name = store["name"]
+        s_items = [i for i in items if i["supermarket"] == s_name]
         s_promos = [i for i in s_items if i["is_promo"]]
         s_regular = [i for i in s_items if not i["is_promo"]]
 
         lines.append(f"#### 🛒 {s_name}")
         if not s_items:
-            lines.append("- Geen bijpassende producten gevonden.")
+            lines.append("- No matching products found.")
             lines.append("")
             continue
 
         if s_promos:
-            lines.append("**🔥 Actieve Promoties:**")
+            lines.append("**🔥 Active Promotions:**")
             for p in s_promos:
-                eenheid_str = f" ({p['eenheid']})" if p["eenheid"] else ""
+                unit_str = f" ({p['unit']})" if p["unit"] else ""
                 lines.append(
-                    f"- **PROMO [{p['promotie']}]** {p['titel']} — {p['stukprijs']}{eenheid_str}"
+                    f"- **PROMO [{p['promotion']}]** {p['title']} — {p['unit_price']}{unit_str}"
                 )
         else:
-            lines.append("- *Geen actieve promoties gevonden voor deze zoekopdracht.*")
+            lines.append("- *No active promotions found for this query.*")
 
         if not only_promos and s_regular:
-            lines.append(f"**Standaardprijzen (top {min(len(s_regular), 8)} van {len(s_regular)}):**")
+            lines.append(f"**Standard Prices (top {min(len(s_regular), 8)} of {len(s_regular)}):**")
             for r in s_regular[:8]:
-                eenheid_str = f" ({r['eenheid']})" if r["eenheid"] else ""
-                lines.append(f"- {r['titel']} — {r['stukprijs']}{eenheid_str}")
+                unit_str = f" ({r['unit']})" if r["unit"] else ""
+                lines.append(f"- {r['title']} — {r['unit_price']}{unit_str}")
         lines.append("")
 
     return "\n".join(lines).strip()
@@ -157,23 +157,23 @@ def format_markdown_report(items, queries, stores, only_promos):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Zoek live naar prijzen en promoties bij Albert Heijn, Colruyt en Delhaize."
+        description="Live price and promotion search across Albert Heijn, Colruyt, and Delhaize."
     )
     parser.add_argument(
         "--queries", "-q", required=True,
-        help="Komma-gescheiden zoektermen, bijv. 'skyr,kipfilet' of 'barebells'"
+        help="Comma-separated search terms, e.g. 'skyr,kipfilet' or 'barebells'"
     )
     parser.add_argument(
         "--stores", "-s", default="all",
-        help="Komma-gescheiden winkels: ah, colruyt, delhaize of all (standaard: all)"
+        help="Comma-separated stores: ah, colruyt, delhaize, or all (default: all)"
     )
     parser.add_argument(
         "--only-promos", action="store_true",
-        help="Toon uitsluitend producten die momenteel in promotie staan"
+        help="Show only products that currently have an active promotion"
     )
     parser.add_argument(
         "--json", action="store_true",
-        help="Geef output terug als ruwe JSON i.p.v. Markdown"
+        help="Return output as raw JSON instead of Markdown"
     )
     args = parser.parse_args()
 
@@ -182,7 +182,7 @@ def main():
 
     started_proc = ensure_browser_running()
     try:
-        # Stuur voortgangslogs van extract_page naar stderr zodat stdout zuiver blijft voor de Agent
+        # Redirect progress logs from extract_page to stderr so stdout stays clean for the Agent
         real_stdout = sys.stdout
         sys.stdout = sys.stderr
         try:

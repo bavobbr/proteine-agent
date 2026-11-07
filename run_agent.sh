@@ -8,7 +8,7 @@ if [ -f .env ]; then
   set +a
 fi
 
-echo "[1] Start onzichtbare browser (Xvfb)..."
+echo "[1] Starting invisible browser (Xvfb)..."
 pkill -f "remote-debugging-port=9222"
 sleep 2
 
@@ -21,15 +21,15 @@ xvfb-run -a --server-args="-screen 0 1920x1080x24" \
   "about:blank" &
 
 CHROME_PID=$!
-sleep 5 # Korte pauze voor browser startup
+sleep 5 # Brief pause for browser startup
 
-echo "[2] Data extraheren over alle supermarkten..."
-/home/bavobbr/projects/proteine-agent/venv/bin/python extract_supermarkten.py
+echo "[2] Extracting data across all supermarkets..."
+/home/bavobbr/projects/proteine-agent/venv/bin/python extract_supermarkets.py
 
-echo "[3] Promoties analyseren en Telegram sturen..."
-/home/bavobbr/projects/proteine-agent/venv/bin/python analyseer_promos.py
+echo "[3] Analyzing promotions and sending Telegram notification..."
+/home/bavobbr/projects/proteine-agent/venv/bin/python analyze_promos.py
 
-echo "[4] Opruimen..."
+echo "[4] Cleaning up..."
 kill $CHROME_PID
 pkill -f "remote-debugging-port=9222"
-echo "Agent run voltooid!"
+echo "Agent run completed!"

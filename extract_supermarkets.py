@@ -4,39 +4,39 @@ import sys
 import urllib.parse
 from playwright.async_api import async_playwright
 
-# Doelmerken en vangnet-zoektermen voor de supermarkten
-MERKEN = [
-    "hipro",             # Vangt alle Danone dranken, puddings en repen
-    "barebells",         # Vangt de repen en milkshakes
-    "holie",             # Vangt Holie's Chewy Bars en granola zonder apostrof-issues
-    "melkunie protein",  # Specifiek eiwitrijke dranken en puddings van Melkunie
-    "nakd protein",      # Specifiek de eiwitrijke varianten van Nākd
-    "upfront",           # Uniek merkwoord voor Upfront producten
-    "eiwitreep",         # Vangnet voor losse aanbiedingen op vergeten merken
-    "protein bar"        # Vangnet voor Engelstalige labels
+# Target brands and fallback search terms for Belgian supermarkets
+BRANDS = [
+    "hipro",             # Captures Danone drinks, puddings, and bars
+    "barebells",         # Captures bars and milkshakes
+    "holie",             # Captures Holie's Chewy Bars and granola without apostrophe issues
+    "melkunie protein",  # Specifically high-protein drinks and puddings from Melkunie
+    "nakd protein",      # Specifically high-protein variants from Nākd
+    "upfront",           # Unique brand keyword for Upfront products
+    "eiwitreep",         # Dutch fallback for protein bars across other brands
+    "protein bar"        # English fallback for protein bars
 ]
 
-SUPERMARKTEN = [
+SUPERMARKETS = [
     {
-        "naam": "Albert Heijn",
+        "name": "Albert Heijn",
         "url_template": "https://www.ah.be/zoeken?query={query}",
         "card_selector": '[data-testid="product-card-vertical-container"], article'
     },
     {
-        "naam": "Colruyt",
+        "name": "Colruyt",
         "url_template": "https://www.collectandgo.be/nl/zoek?searchTerm={query}",
         "card_selector": 'a.cogo-product-tile, a[href*="/assortiment/"]'
     },
     {
-        "naam": "Delhaize",
+        "name": "Delhaize",
         "url_template": "https://www.delhaize.be/shop/search?q={query}%3Arelevance&text={query}&sort=relevance",
         "link_pattern": "/shop/",
         "card_selector": '[data-testid="product-block"], article'
     }
 ]
 
-# Universele Semantische DOM Extractor:
-# Haalt zonder duplicaten de exacte semantische velden uit de DOM (titel, actie_badge, stukprijs, eenheid).
+# Universal Semantic DOM Extractor:
+# Extracts semantic fields from the DOM without duplicates (title, promo badge, unit_price, unit).
 SEMANTIC_EXTRACT_JS = r"""(cardSelector) => {
     const cards = Array.from(document.querySelectorAll(cardSelector));
     const results = [];
@@ -47,20 +47,20 @@ SEMANTIC_EXTRACT_JS = r"""(cardSelector) => {
 
         const cleanText = (val) => val ? val.replace(/\s+/g, ' ').trim() : '';
 
-        // 1. Product titel uit semantische heading of link
-        let titel = '';
+        // 1. Product title from semantic heading or link
+        let title = '';
         const heading = card.querySelector(
             '[data-testid="product-block-product-name"], [data-testid="product-card-text-container"], [role="heading"]'
         );
         if (heading) {
-            titel = cleanText(heading.getAttribute('title') || heading.innerText);
+            title = cleanText(heading.getAttribute('title') || heading.innerText);
         }
-        if (!titel && linkEl && linkEl.getAttribute('aria-label')) {
-            titel = cleanText(linkEl.getAttribute('aria-label'));
+        if (!title && linkEl && linkEl.getAttribute('aria-label')) {
+            title = cleanText(linkEl.getAttribute('aria-label'));
         }
-        if (!titel) continue;
+        if (!title) continue;
 
-        // 2. Actie / Promotie badge uit de DOM
+        // 2. Promotion badge from the DOM (filter out non-promo badges on Belgian sites)
         const nonPromoBadges = ['nieuw', 'new', 'tip', 'servicekostactie', 'combineer naar keuze'];
         const promos = [];
         const promoElements = card.querySelectorAll(
@@ -73,52 +73,53 @@ SEMANTIC_EXTRACT_JS = r"""(cardSelector) => {
             }
         });
 
-        // 3. Stukprijs & Eenheidsprijs uit screenreader (.sr-only) of data-testid
-        let stukprijs = '';
-        let eenheid = '';
+        // 3. Unit price & price per kg/l from screenreader (.sr-only) or data-testid
+        let unitPrice = '';
+        let unit = '';
 
         // Check Delhaize / AH data-testids
         const priceEl = card.querySelector('[data-testid="product-block-price"], [data-testid="product-card-current-price"]');
         if (priceEl) {
-            stukprijs = cleanText(priceEl.getAttribute('aria-label') || priceEl.innerText);
+            unitPrice = cleanText(priceEl.getAttribute('aria-label') || priceEl.innerText);
         }
         const descEl = card.querySelector('[data-testid="product-block-supplementary-price"], [data-testid="product-card-price-description"]');
         if (descEl) {
-            eenheid = cleanText(descEl.getAttribute('aria-label') || descEl.innerText);
+            unit = cleanText(descEl.getAttribute('aria-label') || descEl.innerText);
         }
         const unitPriceEl = card.querySelector('[data-testid="product-block-price-per-unit"]');
         if (unitPriceEl) {
             const up = cleanText(unitPriceEl.innerText || unitPriceEl.getAttribute('aria-label'));
-            eenheid = eenheid ? `${eenheid} (${up})` : up;
+            unit = unit ? `${unit} (${up})` : up;
         }
 
-        // Check Colruyt .sr-only spans
+        // Check Colruyt .sr-only spans (Dutch accessibility labels on collectandgo.be)
         card.querySelectorAll('.sr-only').forEach(sr => {
             const txt = cleanText(sr.innerText);
             if (txt.toLowerCase().includes('per stuk')) {
-                stukprijs = txt;
+                unitPrice = txt;
             } else if (txt.toLowerCase().includes('per liter') || txt.toLowerCase().includes('per kilogram')) {
-                eenheid = txt;
+                unit = txt;
             }
         });
 
         const contextLines = [
-            promos.length > 0 ? `PROMOTIE_ACTIEF: ${promos.join(' | ')}` : `GEEN_PROMOTIE (standaardprijs)`,
-            `titel: ${titel}`,
+            promos.length > 0 ? `PROMO_ACTIVE: ${promos.join(' | ')}` : `NO_PROMO (standard price)`,
+            `title: ${title}`,
         ];
-        if (stukprijs) contextLines.push(`stukprijs: ${stukprijs}`);
-        if (eenheid) contextLines.push(`eenheid: ${eenheid}`);
+        if (unitPrice) contextLines.push(`unit_price: ${unitPrice}`);
+        if (unit) contextLines.push(`unit: ${unit}`);
 
         results.push({
             link: link,
-            semantische_context: contextLines
+            semantic_context: contextLines
         });
     }
     return results;
 }"""
 
+
 async def dismiss_cookie_banner(page):
-    """Probeert automatisch bekende cookie banners weg te klikken."""
+    """Attempts to automatically dismiss common cookie consent banners on Belgian supermarkets."""
     cookie_selectors = [
         "#onetrust-accept-btn-handler",
         "button:has-text('Alles accepteren')",
@@ -128,13 +129,14 @@ async def dismiss_cookie_banner(page):
         "button:has-text('Accepteer cookies')",
         "button:has-text('Accepteer')",
         "button:has-text('Akkoord')",
+        "button:has-text('Accept all')",
         "[data-testhook='cookie-accept-all']"
     ]
     for sel in cookie_selectors:
         try:
             btn = page.locator(sel).first
             if await btn.is_visible(timeout=800):
-                print(f"  [Cookie-banner] Klikken op: '{sel}'")
+                print(f"  [Cookie Banner] Clicking: '{sel}'")
                 await btn.click()
                 await page.wait_for_timeout(600)
                 return True
@@ -142,8 +144,9 @@ async def dismiss_cookie_banner(page):
             pass
     return False
 
+
 async def scroll_smoothly(page):
-    """Scrollt omlaag zodat lazy-loaded productkaarten inladen."""
+    """Scrolls down smoothly so lazy-loaded product cards are rendered."""
     try:
         for _ in range(3):
             await page.evaluate("window.scrollBy(0, 700)")
@@ -153,10 +156,11 @@ async def scroll_smoothly(page):
     except Exception:
         pass
 
+
 async def extract_page(page, store, query, seen_links):
     encoded_query = urllib.parse.quote_plus(query)
     url = store["url_template"].format(query=encoded_query)
-    print(f"\n[{store['naam']}] Zoeken naar '{query}' op: {url}")
+    print(f"\n[{store['name']}] Searching for '{query}' at: {url}")
 
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -182,7 +186,7 @@ async def extract_page(page, store, query, seen_links):
         ]
 
         for card in cards:
-            context_lines = card["semantische_context"]
+            context_lines = card["semantic_context"]
             full_text = " ".join(context_lines).lower()
 
             if any(term in full_text for term in ["terugroepactie", "coca-cola", "savooikool"]):
@@ -197,54 +201,56 @@ async def extract_page(page, store, query, seen_links):
             seen_links.add(link)
 
             found_items.append({
-                "supermarkt": store["naam"],
-                "zoekterm": query,
+                "supermarket": store["name"],
+                "search_query": query,
                 "link": link,
-                "semantische_context": context_lines
+                "semantic_context": context_lines
             })
 
-        print(f"  -> {len(found_items)} producten met rijke semantische context opgeslagen.")
+        print(f"  -> Saved {len(found_items)} products with semantic context.")
         return found_items
 
     except Exception as e:
-        print(f"  [FOUT] Kon {store['naam']} ({query}) niet verwerken: {e}")
+        print(f"  [ERROR] Failed to process {store['name']} ({query}): {e}")
         return []
 
+
 async def extract_all_stores():
-    print("Verbinden met Chrome op poort 9222...")
+    print("Connecting to Chrome on port 9222...")
     async with async_playwright() as p:
         try:
             browser = await p.chromium.connect_over_cdp("http://localhost:9222")
         except Exception as e:
-            print(f"\n[FOUT] Kon niet verbinden met Chrome: {e}")
-            print("Zorg dat je Chrome eerst opent via: ./start_browser.sh")
+            print(f"\n[ERROR] Could not connect to Chrome: {e}")
+            print("Make sure Chrome is running first via: ./start_browser.sh or ./start_browser_xvfb.sh")
             return
 
         contexts = browser.contexts
         page = contexts[0].pages[0] if contexts and contexts[0].pages else await browser.new_page()
 
-        alle_producten = []
+        all_products = []
         seen_links = set()
 
-        queries = ["hipro", "barebells", "eiwitreep"] if "--quick" in sys.argv else MERKEN
+        queries = ["hipro", "barebells", "eiwitreep"] if "--quick" in sys.argv else BRANDS
 
-        print(f"Start semantische extractie voor zoektermen: {queries}")
+        print(f"Starting semantic extraction for queries: {queries}")
 
-        for store in SUPERMARKTEN:
+        for store in SUPERMARKETS:
             for query in queries:
                 items = await extract_page(page, store, query, seen_links)
-                alle_producten.extend(items)
+                all_products.extend(items)
                 await asyncio.sleep(1.0)
 
         with open("data.json", "w", encoding="utf-8") as f:
-            json.dump(alle_producten, f, indent=2, ensure_ascii=False)
+            json.dump(all_products, f, indent=2, ensure_ascii=False)
 
         print("\n=======================================================")
-        print(f"[COMPLEET] Totaal {len(alle_producten)} producten met semantische context in data.json!")
-        for store in SUPERMARKTEN:
-            count = sum(1 for p in alle_producten if p["supermarkt"] == store["naam"])
-            print(f"  - {store['naam']}: {count} producten")
+        print(f"[COMPLETE] Total {len(all_products)} products saved with semantic context in data.json!")
+        for store in SUPERMARKETS:
+            count = sum(1 for p in all_products if p["supermarket"] == store["name"])
+            print(f"  - {store['name']}: {count} products")
         print("=======================================================")
+
 
 if __name__ == "__main__":
     asyncio.run(extract_all_stores())
