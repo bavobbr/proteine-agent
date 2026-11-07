@@ -94,6 +94,12 @@ def save_cached_deal(message):
         print(f"[Warning] Could not save message cache: {e}")
 
 
+FUTURE_PROMO_RE = re.compile(
+    r"\b(vanaf\s+(maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|\d{1,2}\s+(januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december|jan|feb|mrt|apr|jun|jul|aug|sep|okt|nov|dec)\b)|geldig\s+vanaf)\b",
+    re.IGNORECASE
+)
+
+
 def parse_semantic_context(context_lines):
     """Extracts structured fields from a product's semantic_context list."""
     info = {
@@ -122,6 +128,12 @@ def parse_semantic_context(context_lines):
             info["unit"] = line.split("unit:", 1)[1].strip()
         elif line.startswith("eenheid:"):
             info["unit"] = line.split("eenheid:", 1)[1].strip()
+
+    # Ignore future promotions that are not yet active in-store (e.g., AH 'Vanaf maandag')
+    if info["is_promo"] and (FUTURE_PROMO_RE.search(info["title"]) or FUTURE_PROMO_RE.search(info["promotion"])):
+        info["is_promo"] = False
+        info["promotion"] = ""
+
     return info
 
 

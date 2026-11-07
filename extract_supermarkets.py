@@ -60,18 +60,29 @@ SEMANTIC_EXTRACT_JS = r"""(cardSelector) => {
         }
         if (!title) continue;
 
-        // 2. Promotion badge from the DOM (filter out non-promo badges on Belgian sites)
+        // 2. Promotion badge from the DOM (filter out non-promo badges and future-dated promos on Belgian sites)
         const nonPromoBadges = ['nieuw', 'new', 'tip', 'servicekostactie', 'combineer naar keuze'];
+        const futurePromoRegex = /\b(vanaf\s+(maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|\d{1,2}\s+(januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december|jan|feb|mrt|apr|jun|jul|aug|sep|okt|nov|dec)\b)|geldig\s+vanaf)\b/i;
+        const cardText = cleanText(card.innerText);
+        const isFuturePromo = futurePromoRegex.test(title) || futurePromoRegex.test(cardText);
+
+        // Clean future prefix / action suffix from AH title
+        title = title.replace(/^vanaf\s+(maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag)\s+/i, '')
+                     .replace(/\s+combineer\s+nu$/i, '')
+                     .trim();
+
         const promos = [];
-        const promoElements = card.querySelectorAll(
-            '[data-testid="tag-promo-label"], [data-testid="product-card-promotion-label"], .ds-strap-line__label, [data-testid*="promo-label"]'
-        );
-        promoElements.forEach(p => {
-            const val = cleanText(p.innerText || p.getAttribute('aria-label'));
-            if (val && !nonPromoBadges.includes(val.toLowerCase()) && !promos.includes(val)) {
-                promos.push(val);
-            }
-        });
+        if (!isFuturePromo) {
+            const promoElements = card.querySelectorAll(
+                '[data-testid="tag-promo-label"], [data-testid="product-card-promotion-label"], .ds-strap-line__label, [data-testid*="promo-label"]'
+            );
+            promoElements.forEach(p => {
+                const val = cleanText(p.innerText || p.getAttribute('aria-label'));
+                if (val && !nonPromoBadges.includes(val.toLowerCase()) && !futurePromoRegex.test(val) && !promos.includes(val)) {
+                    promos.push(val);
+                }
+            });
+        }
 
         // 3. Unit price & price per kg/l from screenreader (.sr-only) or data-testid
         let unitPrice = '';
