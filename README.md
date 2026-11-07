@@ -43,6 +43,8 @@ flowchart LR
 | `run_agent.sh` | Hoofdscript: laadt `.env`, start Xvfb + Chrome, draait de scraper en vervolgens de promo-analyse. |
 | `extract_supermarkten.py` | Playwright CDP-scraper voor Albert Heijn, Colruyt en Delhaize. Schrijft resultaten naar `data.json`. |
 | `analyseer_promos.py` | Vergelijkt `data.json` met `seen_promos.json`, voert de 2-traps Ollama-analyse uit en stuurt het Telegram-bericht. |
+| `search_on_demand.py` | On-demand CLI-wrapper (hergebruikt `extract_supermarkten.py` en `analyseer_promos.py`) om vanuit een Personal Agent live producten/promo's op te zoeken zonder `data.json` te overschrijven. |
+| `skills/supermarkt-promos/SKILL.md` | Agent Skill definitie (`SKILL.md` standaard) voor integratie in **Hermes Agent**, **OpenClaw** of **Antigravity**. |
 | `start_browser.sh` | Hulpscript om Chrome **zichtbaar** te starten (handig om eenmalig cookies/sessies in het profiel op te slaan). |
 | `start_browser_xvfb.sh` | Hulpscript om Chrome los op de achtergrond in `Xvfb` te starten. |
 | `.env.example` | Sjabloon voor de benodigde omgevingsvariabelen (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `OLLAMA_URL`, `OLLAMA_MODEL`). |
@@ -116,6 +118,19 @@ De agent draait automatisch elke woensdag om 09:00 uur via `crontab -e`:
 ```cron
 0 9 * * 3 /home/bavobbr/projects/proteine-agent/run_agent.sh >> /home/bavobbr/projects/proteine-agent/agent_log.txt 2>&1
 ```
+
+### On-Demand Zoeken (CLI & Personal Agent Skill)
+Met `search_on_demand.py` kun je (handmatig of vanuit een Personal Agent zoals **Hermes Agent** / **OpenClaw**) op elk moment gericht zoeken naar eender welk product bij specifieke winkels, zonder `data.json` of `seen_promos.json` van de wekelijkse cronjob aan te raken:
+
+```bash
+# Zoek naar 'skyr' bij Delhaize en Colruyt:
+./venv/bin/python search_on_demand.py --queries "skyr" --stores "delhaize,colruyt"
+
+# Zoek uitsluitend naar actieve promoties voor kipfilet of pindakaas bij alle winkels:
+./venv/bin/python search_on_demand.py --queries "kipfilet,pindakaas" --only-promos
+```
+
+De bijbehorende Agent Skill staat klaar in `skills/supermarkt-promos/SKILL.md` en kan rechtstreeks gekoppeld worden aan Hermes Agent (`ln -s /home/bavobbr/projects/proteine-agent/skills/supermarkt-promos ~/.hermes/skills/supermarkt-promos`).
 
 ---
 

@@ -175,8 +175,9 @@ async def extract_page(page, store, query, seen_links):
         cards = await page.evaluate(SEMANTIC_EXTRACT_JS, card_selector)
 
         found_items = []
+        query_words = [w for w in query.lower().split() if len(w) >= 2]
         target_keywords = [
-            query.lower(), "hipro", "danone", "barebells", "holie", "melkunie",
+            query.lower(), *query_words, "hipro", "danone", "barebells", "holie", "melkunie",
             "nakd", "nākd", "upfront", "protein", "proteïne", "eiwit", "reep", "bar"
         ]
 
