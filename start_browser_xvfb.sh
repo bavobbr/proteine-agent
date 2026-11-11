@@ -10,5 +10,6 @@ xvfb-run -a --server-args="-screen 0 1920x1080x24" \
   --ozone-platform=x11 \
   --remote-debugging-port=9222 \
   --user-data-dir="$HOME/.config/chrome-ah-profile" \
+  --disable-search-engine-choice-screen \
   --window-size=1920,1080 \
   "about:blank" &

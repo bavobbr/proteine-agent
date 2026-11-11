@@ -158,6 +158,7 @@ def ensure_browser_running(port=9222):
         "--ozone-platform=x11",
         f"--remote-debugging-port={port}",
         f"--user-data-dir={profile_dir}",
+        "--disable-search-engine-choice-screen",
         "--window-size=1920,1080",
         "about:blank"
     ]
@@ -276,7 +277,11 @@ async def scrape_stores(queries=None, stores=None, delay=1.0):
     async with async_playwright() as p:
         browser = await p.chromium.connect_over_cdp("http://localhost:9222")
         contexts = browser.contexts
-        page = contexts[0].pages[0] if contexts and contexts[0].pages else await browser.new_page()
+        pages = [
+            pg for pg in (contexts[0].pages if contexts else [])
+            if not pg.url.startswith("chrome://search-engine-choice")
+        ]
+        page = pages[0] if pages else await browser.new_page()
 
         all_products = []
         seen_links = set()
