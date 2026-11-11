@@ -15,7 +15,7 @@ import time
 import urllib.request
 from playwright.async_api import async_playwright
 
-from extract_supermarkets import SUPERMARKETS, extract_page
+from extract_supermarkets import BRANDS, SUPERMARKETS, extract_page
 from analyze_promos import parse_semantic_context
 
 STORE_ALIASES = {
@@ -160,8 +160,8 @@ def main():
         description="Live price and promotion search across Albert Heijn, Colruyt, and Delhaize."
     )
     parser.add_argument(
-        "--queries", "-q", required=True,
-        help="Comma-separated search terms, e.g. 'skyr,kipfilet' or 'barebells'"
+        "--queries", "-q", default="",
+        help="Comma-separated search terms (defaults to BRANDS from extract_supermarkets.py if omitted or empty)"
     )
     parser.add_argument(
         "--stores", "-s", default="all",
@@ -177,7 +177,11 @@ def main():
     )
     args = parser.parse_args()
 
-    queries = [q.strip() for q in args.queries.split(",") if q.strip()]
+    raw_queries = [q.strip() for q in args.queries.split(",") if q.strip()]
+    if not raw_queries or raw_queries == ["default"] or raw_queries == ["all"]:
+        queries = list(BRANDS)
+    else:
+        queries = raw_queries
     stores = resolve_stores(args.stores)
 
     started_proc = ensure_browser_running()
