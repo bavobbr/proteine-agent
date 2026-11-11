@@ -6,10 +6,15 @@ import re
 import sys
 import requests
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, "data.json")
+SEEN_PROMOS_FILE = os.path.join(BASE_DIR, "seen_promos.json")
+CACHE_FILE = os.path.join(BASE_DIR, "last_message.json")
+
 
 def load_dotenv_file(dotenv_path=".env"):
     """Loads key-value pairs from .env into os.environ without external dependencies."""
-    full_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), dotenv_path)
+    full_path = os.path.join(BASE_DIR, dotenv_path)
     if not os.path.exists(full_path):
         return
     try:
@@ -30,8 +35,6 @@ load_dotenv_file()
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-SEEN_PROMOS_FILE = "seen_promos.json"
-CACHE_FILE = "last_message.json"
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
 MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-coder:30b")
 
@@ -130,10 +133,11 @@ def is_at_least_50_percent_off(promotion_str):
     return False
 
 
-def parse_semantic_context(context_lines):
+def parse_semantic_context(context_lines, require_major_discount=True):
     """Extracts structured fields from a product's semantic_context list."""
     info = {
         "is_promo": False,
+        "is_major_promo": False,
         "promotion": "",
         "title": "",
         "unit_price": "",
@@ -155,10 +159,11 @@ def parse_semantic_context(context_lines):
         info["is_promo"] = False
         info["promotion"] = ""
 
-    # Ignore minor promotions (< 50% effective discount per item)
-    if info["is_promo"] and not is_at_least_50_percent_off(info["promotion"]):
-        info["is_promo"] = False
-        info["promotion"] = ""
+    if info["is_promo"]:
+        info["is_major_promo"] = is_at_least_50_percent_off(info["promotion"])
+        if require_major_discount and not info["is_major_promo"]:
+            info["is_promo"] = False
+            info["promotion"] = ""
 
     return info
 
@@ -202,7 +207,7 @@ def evaluate_deals_memory(data, seen_promos):
         item_copy["supermarket"] = store
 
         raw_ctx = list(item.get("semantic_context") or [])
-        parsed = parse_semantic_context(raw_ctx)
+        parsed = parse_semantic_context(raw_ctx, require_major_discount=True)
 
         ctx = [
             f"PROMO_ACTIVE: {parsed['promotion']}" if parsed["is_promo"] else "NO_PROMO (standard price)",
@@ -217,32 +222,23 @@ def evaluate_deals_memory(data, seen_promos):
             deal_hash = compute_deal_hash(
                 store, parsed["title"], parsed["promotion"], parsed["unit_price"]
             )
-            if deal_hash in seen_promos:
-                status = "ONGOING_DEAL"
-                prev = seen_promos[deal_hash]
-                deal_record = {
-                    "supermarket": store,
-                    "title": parsed["title"],
-                    "promotion": parsed["promotion"],
-                    "unit_price": parsed["unit_price"],
-                    "unit": parsed["unit"],
-                    "link": item.get("link", ""),
-                    "first_seen": prev.get("first_seen", now_iso),
-                    "last_seen": now_iso
-                }
+            is_ongoing = deal_hash in seen_promos
+            status = "ONGOING_DEAL" if is_ongoing else "NEW_DEAL"
+            first_seen = seen_promos[deal_hash].get("first_seen", now_iso) if is_ongoing else now_iso
+
+            deal_record = {
+                "supermarket": store,
+                "title": parsed["title"],
+                "promotion": parsed["promotion"],
+                "unit_price": parsed["unit_price"],
+                "unit": parsed["unit"],
+                "link": item.get("link", ""),
+                "first_seen": first_seen,
+                "last_seen": now_iso
+            }
+            if is_ongoing:
                 ongoing_deals.append(deal_record)
             else:
-                status = "NEW_DEAL"
-                deal_record = {
-                    "supermarket": store,
-                    "title": parsed["title"],
-                    "promotion": parsed["promotion"],
-                    "unit_price": parsed["unit_price"],
-                    "unit": parsed["unit"],
-                    "link": item.get("link", ""),
-                    "first_seen": now_iso,
-                    "last_seen": now_iso
-                }
                 new_deals.append(deal_record)
 
             updated_seen[deal_hash] = deal_record
@@ -386,7 +382,7 @@ if __name__ == "__main__":
     dry_run = "--dry-run" in sys.argv
 
     try:
-        with open("data.json", "r", encoding="utf-8") as f:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
             raw_data = json.load(f)
     except FileNotFoundError:
         print("No data.json found. Run extract_supermarkets.py first.")

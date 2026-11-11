@@ -3,6 +3,8 @@ echo "Starting invisible multi-store browser (Xvfb)..."
 pkill -f "remote-debugging-port=9222"
 sleep 2
 
+mkdir -p "$HOME/.config/chrome-ah-profile"
+
 xvfb-run -a --server-args="-screen 0 1920x1080x24" \
   google-chrome-stable \
   --ozone-platform=x11 \

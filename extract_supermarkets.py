@@ -1,8 +1,15 @@
 import asyncio
 import json
+import os
+import subprocess
 import sys
+import time
 import urllib.parse
+import urllib.request
 from playwright.async_api import async_playwright
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, "data.json")
 
 # Target brands and fallback search terms for Belgian supermarkets
 BRANDS = [
@@ -129,6 +136,39 @@ SEMANTIC_EXTRACT_JS = r"""(cardSelector) => {
 }"""
 
 
+def is_cdp_ready(port=9222):
+    try:
+        with urllib.request.urlopen(f"http://localhost:{port}/json/version", timeout=1.5) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def ensure_browser_running(port=9222):
+    """Starts Xvfb + Chrome on port 9222 if not already running. Returns subprocess if started by us."""
+    if is_cdp_ready(port):
+        return None
+
+    profile_dir = os.path.expanduser("~/.config/chrome-ah-profile")
+    os.makedirs(profile_dir, exist_ok=True)
+
+    cmd = [
+        "xvfb-run", "-a", "--server-args=-screen 0 1920x1080x24",
+        "google-chrome-stable",
+        "--ozone-platform=x11",
+        f"--remote-debugging-port={port}",
+        f"--user-data-dir={profile_dir}",
+        "--window-size=1920,1080",
+        "about:blank"
+    ]
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(20):
+        if is_cdp_ready(port):
+            return proc
+        time.sleep(0.5)
+    return proc
+
+
 async def dismiss_cookie_banner(page):
     """Attempts to automatically dismiss common cookie consent banners on Belgian supermarkets."""
     cookie_selectors = [
@@ -227,41 +267,49 @@ async def extract_page(page, store, query, seen_links):
         return []
 
 
-async def extract_all_stores():
+async def scrape_stores(queries=None, stores=None, delay=1.0):
+    """Connects to Chrome on port 9222 and scrapes all specified stores and queries."""
+    queries = queries if queries is not None else BRANDS
+    stores = stores if stores is not None else SUPERMARKETS
+
     print("Connecting to Chrome on port 9222...")
     async with async_playwright() as p:
-        try:
-            browser = await p.chromium.connect_over_cdp("http://localhost:9222")
-        except Exception as e:
-            print(f"\n[ERROR] Could not connect to Chrome: {e}")
-            print("Make sure Chrome is running first via: ./start_browser.sh or ./start_browser_xvfb.sh")
-            return
-
+        browser = await p.chromium.connect_over_cdp("http://localhost:9222")
         contexts = browser.contexts
         page = contexts[0].pages[0] if contexts and contexts[0].pages else await browser.new_page()
 
         all_products = []
         seen_links = set()
 
-        queries = ["hipro", "barebells", "eiwitreep"] if "--quick" in sys.argv else BRANDS
-
         print(f"Starting semantic extraction for queries: {queries}")
 
-        for store in SUPERMARKETS:
+        for store in stores:
             for query in queries:
                 items = await extract_page(page, store, query, seen_links)
                 all_products.extend(items)
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(delay)
 
-        with open("data.json", "w", encoding="utf-8") as f:
-            json.dump(all_products, f, indent=2, ensure_ascii=False)
+        return all_products
 
-        print("\n=======================================================")
-        print(f"[COMPLETE] Total {len(all_products)} products saved with semantic context in data.json!")
-        for store in SUPERMARKETS:
-            count = sum(1 for p in all_products if p["supermarket"] == store["name"])
-            print(f"  - {store['name']}: {count} products")
-        print("=======================================================")
+
+async def extract_all_stores():
+    queries = ["hipro", "barebells", "eiwitreep"] if "--quick" in sys.argv else BRANDS
+    try:
+        all_products = await scrape_stores(queries=queries, stores=SUPERMARKETS, delay=1.0)
+    except Exception as e:
+        print(f"\n[ERROR] Could not connect to Chrome: {e}")
+        print("Make sure Chrome is running first via: ./start_browser.sh or ./start_browser_xvfb.sh")
+        return
+
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(all_products, f, indent=2, ensure_ascii=False)
+
+    print("\n=======================================================")
+    print(f"[COMPLETE] Total {len(all_products)} products saved with semantic context in {DATA_FILE}!")
+    for store in SUPERMARKETS:
+        count = sum(1 for p in all_products if p["supermarket"] == store["name"])
+        print(f"  - {store['name']}: {count} products")
+    print("=======================================================")
 
 
 if __name__ == "__main__":

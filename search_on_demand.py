@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
 """
 On-Demand Supermarket Search CLI (wrapper for Personal Agent / Hermes Skill).
-Reuses SUPERMARKETS and extract_page from extract_supermarkets.py and
-parse_semantic_context from analyze_promos.py with zero code duplication and
-without touching data.json or seen_promos.json used by the weekly cron job.
+Reuses BRANDS, SUPERMARKETS, ensure_browser_running, and scrape_stores from
+extract_supermarkets.py and parse_semantic_context from analyze_promos.py
+with zero code duplication and without touching data.json or seen_promos.json
+used by the weekly cron job.
 """
 import argparse
 import asyncio
 import json
-import os
 import subprocess
 import sys
-import time
-import urllib.request
-from playwright.async_api import async_playwright
 
-from extract_supermarkets import BRANDS, SUPERMARKETS, extract_page
+from extract_supermarkets import BRANDS, SUPERMARKETS, ensure_browser_running, scrape_stores
 from analyze_promos import parse_semantic_context
 
 STORE_ALIASES = {
@@ -27,39 +24,6 @@ STORE_ALIASES = {
     "collectandgo": "Colruyt",
     "delhaize": "Delhaize",
 }
-
-
-def is_cdp_ready(port=9222):
-    try:
-        with urllib.request.urlopen(f"http://localhost:{port}/json/version", timeout=1.5) as resp:
-            return resp.status == 200
-    except Exception:
-        return False
-
-
-def ensure_browser_running():
-    """Starts Xvfb + Chrome on port 9222 if not already running. Returns subprocess if started by us."""
-    if is_cdp_ready(9222):
-        return None
-
-    profile_dir = os.path.expanduser("~/.config/chrome-ah-profile")
-    os.makedirs(profile_dir, exist_ok=True)
-
-    cmd = [
-        "xvfb-run", "-a", "--server-args=-screen 0 1920x1080x24",
-        "google-chrome-stable",
-        "--ozone-platform=x11",
-        "--remote-debugging-port=9222",
-        f"--user-data-dir={profile_dir}",
-        "--window-size=1920,1080",
-        "about:blank"
-    ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for _ in range(20):
-        if is_cdp_ready(9222):
-            return proc
-        time.sleep(0.5)
-    return proc
 
 
 def resolve_stores(stores_arg):
@@ -81,45 +45,41 @@ def resolve_stores(stores_arg):
 
 
 async def run_search(queries, stores, only_promos=False):
-    async with async_playwright() as p:
-        browser = await p.chromium.connect_over_cdp("http://localhost:9222")
-        contexts = browser.contexts
-        page = contexts[0].pages[0] if contexts and contexts[0].pages else await browser.new_page()
+    raw_items = await scrape_stores(queries=queries, stores=stores, delay=0.5)
+    all_items = []
 
-        all_items = []
-        seen_links = set()
+    for item in raw_items:
+        parsed = parse_semantic_context(
+            item.get("semantic_context", []),
+            require_major_discount=False
+        )
+        if only_promos and not parsed["is_promo"]:
+            continue
+        all_items.append({
+            "supermarket": item["supermarket"],
+            "search_query": item["search_query"],
+            "is_promo": parsed["is_promo"],
+            "is_major_promo": parsed["is_major_promo"],
+            "promotion": parsed["promotion"],
+            "title": parsed["title"],
+            "unit_price": parsed["unit_price"],
+            "unit": parsed["unit"],
+            "link": item["link"],
+        })
 
-        for store in stores:
-            for query in queries:
-                items = await extract_page(page, store, query, seen_links)
-                for item in items:
-                    parsed = parse_semantic_context(item.get("semantic_context", []))
-                    if only_promos and not parsed["is_promo"]:
-                        continue
-                    all_items.append({
-                        "supermarket": item["supermarket"],
-                        "search_query": item["search_query"],
-                        "is_promo": parsed["is_promo"],
-                        "promotion": parsed["promotion"],
-                        "title": parsed["title"],
-                        "unit_price": parsed["unit_price"],
-                        "unit": parsed["unit"],
-                        "link": item["link"],
-                    })
-                await asyncio.sleep(0.5)
-
-        return all_items
+    return all_items
 
 
 def format_markdown_report(items, queries, stores, only_promos):
     store_names = ", ".join(s["name"] for s in stores)
     query_str = ", ".join(queries)
     promos = [i for i in items if i["is_promo"]]
+    major_promos = [i for i in promos if i["is_major_promo"]]
 
     lines = [
         f"### Supermarket Search Results ({store_names})",
         f"- **Queries:** {query_str}",
-        f"- **Found:** {len(items)} products ({len(promos)} with active promotion)",
+        f"- **Found:** {len(items)} products ({len(promos)} with active promotion, {len(major_promos)} with >=50% discount)",
         ""
     ]
 
@@ -139,8 +99,9 @@ def format_markdown_report(items, queries, stores, only_promos):
             lines.append("**🔥 Active Promotions:**")
             for p in s_promos:
                 unit_str = f" ({p['unit']})" if p["unit"] else ""
+                tag = "PROMO (50%+)" if p["is_major_promo"] else "PROMO (<50%)"
                 lines.append(
-                    f"- **PROMO [{p['promotion']}]** {p['title']} — {p['unit_price']}{unit_str}"
+                    f"- **{tag} [{p['promotion']}]** {p['title']} — {p['unit_price']}{unit_str}"
                 )
         else:
             lines.append("- *No active promotions found for this query.*")
@@ -178,7 +139,7 @@ def main():
     args = parser.parse_args()
 
     raw_queries = [q.strip() for q in args.queries.split(",") if q.strip()]
-    if not raw_queries or raw_queries == ["default"] or raw_queries == ["all"]:
+    if not raw_queries or raw_queries in (["default"], ["all"]):
         queries = list(BRANDS)
     else:
         queries = raw_queries
@@ -186,7 +147,7 @@ def main():
 
     started_proc = ensure_browser_running()
     try:
-        # Redirect progress logs from extract_page to stderr so stdout stays clean for the Agent
+        # Redirect progress logs from scrape_stores to stderr so stdout stays clean for the Agent
         real_stdout = sys.stdout
         sys.stdout = sys.stderr
         try:
