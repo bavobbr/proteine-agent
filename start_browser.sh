@@ -10,11 +10,16 @@ sleep 1
 mkdir -p "$HOME/.config/chrome-ah-profile"
 
 echo "Starting visible Google Chrome on your display..."
-google-chrome-stable \
-  --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.config/chrome-ah-profile" \
-  --disable-search-engine-choice-screen \
-  --window-size=1920,1080 \
-  "about:blank" &
+(
+  google-chrome-stable \
+    --remote-debugging-address=127.0.0.1 \
+    --remote-debugging-port=9222 \
+    --user-data-dir="$HOME/.config/chrome-ah-profile" \
+    --disable-search-engine-choice-screen \
+    --window-size=1920,1080 \
+    "about:blank"
+  echo "Visible Chrome closed — restoring background chrome-cdp-xvfb.service..."
+  systemctl --user start chrome-cdp-xvfb.service 2>/dev/null || true
+) &
 
-echo "Browser started! (Note: run 'systemctl --user start chrome-cdp-xvfb.service' when done to restore the background service)"
+echo "Browser started! (When you close this Chrome window, chrome-cdp-xvfb.service will automatically restart)"

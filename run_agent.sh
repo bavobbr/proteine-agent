@@ -9,9 +9,9 @@ if [ -f .env ]; then
   set +a
 fi
 
-echo "[1] Starting invisible browser (Xvfb)..."
+echo "[1] Ensuring invisible browser service (chrome-cdp-xvfb.service) is running..."
 ./start_browser_xvfb.sh
-sleep 5 # Brief pause for browser startup
+sleep 3 # Brief pause for browser readiness
 
 echo "[2] Extracting data across all supermarkets..."
 "$SCRIPT_DIR/venv/bin/python" extract_supermarkets.py
@@ -19,6 +19,4 @@ echo "[2] Extracting data across all supermarkets..."
 echo "[3] Analyzing promotions and sending Telegram notification..."
 "$SCRIPT_DIR/venv/bin/python" analyze_promos.py
 
-echo "[4] Cleaning up..."
-pkill -f "remote-debugging-port=9222"
 echo "Agent run completed!"

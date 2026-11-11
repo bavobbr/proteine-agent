@@ -19,7 +19,8 @@ Use this skill whenever the user asks to check prices, offers, or promotions at 
 ## Available Commands
 
 ### 1. Live Promo & Price Search (`search_on_demand.py`)
-Run the command below via your `terminal` tool. It connects to the headless Chrome CDP service (`localhost:9222`) and prints the formatted results to stdout (without touching `data.json` or `seen_promos.json`):
+Run the command below via your `terminal` tool. It connects to the host's headless Chrome CDP service (`127.0.0.1:9222`, managed on the host by `chrome-cdp-xvfb.service`) and prints the formatted results to stdout (without touching `data.json` or `seen_promos.json`).
+> **Important Docker Sandbox Note:** Your `terminal` tool runs inside an isolated Docker container where `systemctl` and `Xvfb` are not used directly (`search_on_demand.py` automatically checks `127.0.0.1:9222`, and on the host `ensure_browser_running()` automatically runs `systemctl --user start chrome-cdp-xvfb.service`). Never try to run `systemctl` or `apt-get install xvfb` inside the Docker container—if `127.0.0.1:9222` is ever unreachable from the container, simply ask the user to run `systemctl --user start chrome-cdp-xvfb.service` on the host.
 
 ```bash
 # Default scan (when no specific product is mentioned — automatically scans the default protein watchlist BRANDS from extract_supermarkets.py):

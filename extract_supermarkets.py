@@ -138,16 +138,39 @@ SEMANTIC_EXTRACT_JS = r"""(cardSelector) => {
 
 def is_cdp_ready(port=9222):
     try:
-        with urllib.request.urlopen(f"http://localhost:{port}/json/version", timeout=1.5) as resp:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=1.5) as resp:
             return resp.status == 200
     except Exception:
         return False
 
 
 def ensure_browser_running(port=9222):
-    """Starts Xvfb + Chrome on port 9222 if not already running. Returns subprocess if started by us."""
+    """Ensures Xvfb + Chrome is listening on 127.0.0.1:9222. Uses systemd service on host if available."""
     if is_cdp_ready(port):
         return None
+
+    # Inside the Docker sandbox container, systemctl/xvfb-run do not exist; host service must provide 127.0.0.1:9222
+    if os.path.exists("/.dockerenv"):
+        raise RuntimeError(
+            f"Chrome CDP on 127.0.0.1:{port} is not reachable from inside the Docker sandbox. "
+            "Please run 'systemctl --user start chrome-cdp-xvfb.service' on the host."
+        )
+
+    # On the host, prefer starting the managed user systemd service so it stays running cleanly
+    try:
+        res = subprocess.run(
+            ["systemctl", "--user", "start", "chrome-cdp-xvfb.service"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        if res.returncode == 0:
+            for _ in range(20):
+                if is_cdp_ready(port):
+                    return None
+                time.sleep(0.5)
+    except Exception:
+        pass
 
     profile_dir = os.path.expanduser("~/.config/chrome-ah-profile")
     os.makedirs(profile_dir, exist_ok=True)
@@ -156,6 +179,7 @@ def ensure_browser_running(port=9222):
         "xvfb-run", "-a", "--server-args=-screen 0 1920x1080x24",
         "google-chrome-stable",
         "--ozone-platform=x11",
+        "--remote-debugging-address=127.0.0.1",
         f"--remote-debugging-port={port}",
         f"--user-data-dir={profile_dir}",
         "--disable-search-engine-choice-screen",
@@ -273,9 +297,9 @@ async def scrape_stores(queries=None, stores=None, delay=1.0):
     queries = queries if queries is not None else BRANDS
     stores = stores if stores is not None else SUPERMARKETS
 
-    print("Connecting to Chrome on port 9222...")
+    print("Connecting to Chrome on 127.0.0.1:9222...")
     async with async_playwright() as p:
-        browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+        browser = await p.chromium.connect_over_cdp("http://127.0.0.1:9222")
         contexts = browser.contexts
         pages = [
             pg for pg in (contexts[0].pages if contexts else [])
