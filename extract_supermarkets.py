@@ -31,7 +31,6 @@ SUPERMARKETS = [
     {
         "name": "Delhaize",
         "url_template": "https://www.delhaize.be/shop/search?q={query}%3Arelevance&text={query}&sort=relevance",
-        "link_pattern": "/shop/",
         "card_selector": '[data-testid="product-block"], article'
     }
 ]

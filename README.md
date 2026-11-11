@@ -32,7 +32,7 @@ flowchart LR
   - **Automatic pruning:** When a promotion ends at a store, it is automatically removed from `seen_promos.json`. When the same deal returns weeks later, it is treated as `🆕` again.
 - **2-Stage Local LLM Map-Reduce (`analyze_promos.py`):**
   - Runs locally on **Ollama** (`qwen3-coder:30b` on RTX 5080, `temperature: 0.0`).
-  - Calculates effective per-item promo prices (`1+1 free` = `0.50x`, `2nd at -50%` = `0.75x`, `-25% from 2 pcs` = `0.75x`, etc.) and merges different flavors/variants of the same brand onto a single bullet line.
+  - Filters strictly for major promotions (>= 50% effective discount per item, such as `1+1 free`, `2nd free`, `-50%`), calculates effective per-item promo prices (`0.50 * unit_price`), and merges different flavors/variants of the same brand onto a single bullet line.
 - **Personal Agent Skill Ready (`search_on_demand.py` & `skills/supermarket-promos/SKILL.md`):**
   - Can be invoked on demand by a local Personal Agent (**Hermes Agent**, **OpenClaw**, or **Antigravity**) for arbitrary products and stores without touching the weekly cron state.
 
@@ -125,6 +125,9 @@ The agent runs automatically every Wednesday at 09:00 AM via `crontab -e`:
 Use `search_on_demand.py` (manually or via **Hermes Agent** / **OpenClaw**) to search live for any product across specific supermarkets without touching `data.json` or `seen_promos.json`:
 
 ```bash
+# Scan the default protein watchlist for active promotions across all stores:
+./venv/bin/python search_on_demand.py --only-promos
+
 # Search for 'skyr' at Delhaize and Colruyt:
 ./venv/bin/python search_on_demand.py --queries "skyr" --stores "delhaize,colruyt"
 

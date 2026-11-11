@@ -143,21 +143,12 @@ def parse_semantic_context(context_lines):
         if line.startswith("PROMO_ACTIVE:"):
             info["is_promo"] = True
             info["promotion"] = line.split("PROMO_ACTIVE:", 1)[1].strip()
-        elif line.startswith("PROMOTIE_ACTIEF:"):
-            info["is_promo"] = True
-            info["promotion"] = line.split("PROMOTIE_ACTIEF:", 1)[1].strip()
         elif line.startswith("title:"):
             info["title"] = line.split("title:", 1)[1].strip()
-        elif line.startswith("titel:"):
-            info["title"] = line.split("titel:", 1)[1].strip()
         elif line.startswith("unit_price:"):
             info["unit_price"] = line.split("unit_price:", 1)[1].strip()
-        elif line.startswith("stukprijs:"):
-            info["unit_price"] = line.split("stukprijs:", 1)[1].strip()
         elif line.startswith("unit:"):
             info["unit"] = line.split("unit:", 1)[1].strip()
-        elif line.startswith("eenheid:"):
-            info["unit"] = line.split("eenheid:", 1)[1].strip()
 
     # Ignore future promotions that are not yet active in-store (e.g., AH 'Vanaf maandag')
     if info["is_promo"] and (FUTURE_PROMO_RE.search(info["title"]) or FUTURE_PROMO_RE.search(info["promotion"])):
@@ -190,16 +181,15 @@ def evaluate_deals_memory(data, seen_promos):
     """
     now_iso = datetime.datetime.now().isoformat(timespec="seconds")
     scraped_stores = {
-        (item.get("supermarket") or item.get("supermarkt"))
+        item.get("supermarket")
         for item in data
-        if (item.get("supermarket") or item.get("supermarkt"))
+        if item.get("supermarket")
     }
 
     updated_seen = {}
     # Preserve existing deals for stores that failed to scrape in this run
     for deal_hash, deal_obj in seen_promos.items():
-        store_key = deal_obj.get("supermarket") or deal_obj.get("supermarkt")
-        if store_key not in scraped_stores:
+        if deal_obj.get("supermarket") not in scraped_stores:
             updated_seen[deal_hash] = deal_obj
 
     new_deals = []
@@ -208,13 +198,12 @@ def evaluate_deals_memory(data, seen_promos):
 
     for item in data:
         item_copy = dict(item)
-        store = item.get("supermarket") or item.get("supermarkt") or "Unknown"
+        store = item.get("supermarket") or "Unknown"
         item_copy["supermarket"] = store
 
-        raw_ctx = list(item.get("semantic_context") or item.get("semantische_context") or [])
+        raw_ctx = list(item.get("semantic_context") or [])
         parsed = parse_semantic_context(raw_ctx)
 
-        # Normalize context lines to English keys
         ctx = [
             f"PROMO_ACTIVE: {parsed['promotion']}" if parsed["is_promo"] else "NO_PROMO (standard price)",
             f"title: {parsed['title']}",
@@ -279,7 +268,7 @@ def sanitize_telegram_message(text):
             lines.append(f"\n*{content}*")
         else:
             if "🆕" in line:
-                line = re.sub(r'\s*_?\((?:still running|loopt nog)\)_?', '', line, flags=re.IGNORECASE)
+                line = re.sub(r'\s*_?\(still running\)_?', '', line, flags=re.IGNORECASE)
             lines.append(line)
 
     return "\n".join(lines).strip()
